@@ -40,6 +40,9 @@ import random
 import traceback
 import pickle
 
+import Util
+import RobState
+
 class Action:
 
     def __repr__(self):
@@ -52,7 +55,7 @@ class Action:
         return self.name == other.name
 
     def str_masks_to_np_default():
-        np_masks = np.zeros(shape = (max(_INDEX) + 2, max(_POSITION_K) + 1))
+        np_masks = np.zeros(shape = (max(INDEX) + 2, max(POSITION_K) + 1))
 
     def str_masks_to_np(self, str1, state):
         return Action.str_masks_to_np_default()
