@@ -2,12 +2,22 @@ import numpy as np
 import string
 
 MAX_STR_LEN = 36
+MAX_MASK_LEN = 7
 CHARACTERS = string.printable[:-4]
-DELIMITERS = "& , . ? ! @ ( ) [ ] % { } / : ; $ # \" ' -".split(' ') + [" "]
-BOUNDARY = ["Start", "End"]
+DELIMITERS = '& , . ? ! @ ( ) [ ] % { } / : ; $ # " \' -'.split(' ') + [' ']
+BOUNDARY = ['Start', 'End']
 POSITION_K = list(range(-MAX_STR_LEN, MAX_STR_LEN + 1))
 INDEX = list(range(-5, 6))
-
+REGEX = {
+    'Number'   : r'[0-9]+',
+    'Word'     : r'[A-z]+',
+    'Alphanum' : r'[A-Za-z0-9]+',
+    'PropCase' : r'[A-Z][a-z]*',
+    'AllCaps'  : r'[A-Z]+',
+    'Lower'    : r'[a-z]+',
+    'Digit'    : r'[0-9]+',
+    'Char'     : r'.'
+}
 
 def str_to_np(list_of_str):
     """
