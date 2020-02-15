@@ -1,33 +1,9 @@
 """
 String Manipulation Grammar
 
-Program
-p := concat(e1, e2, e3, ...)
-Expression
-e := f | n | n1(n2) | n(f) | constStr(c)
-Substring
-f :=
-   | GetSpan(r1, i1, y1, r2, i2, y2)
-Nesting
-n := getToken(t, i) | trim()
-   | getUpto(r) | getFrom(r)
-   | getFirst(t, i) | getAll(t)
-Regex
-r := t1 | ... | tn | d1 | ... | dm
-Type
-t := Number | Word | Alphanum
-   | AllCaps | PropCase | Lower
-   | Digit | Char
-Position
-k := -100 ~ 100
-Index
-i := -5 ~ 5
-Character
-c := A-Za-z0-9!?@
-Delimiter
-d := &!#$%^&*()
-Boundary
-y := Start | End
+- [ ] it might work better if we separate the regex finding and the index
+finding into two steps
+- [ ] is it better if we only learn one action at each step?
 
 """
 import numpy as np
@@ -63,7 +39,7 @@ class Action:
         pass
 
     def __call__(self, pstate):
-        if self.name == "Commit":
+        if self.name == 'Commit':
             """
             For commit action, it plays as the concat operation
             append the new committed string to all the previous outputs
@@ -144,12 +120,14 @@ class Replace(Action):
 
     @staticmethod
     def generate_actions():
-        return [Replace(d1, d2) for d1 in DELIMITERS for d2 in DELIMITERS]
+        return [Replace(d1, d2) for d1 in DELIMITERS
+                for d2 in DELIMITERS
+                if d2 != d1]
 
     def str_mask_to_np(self, str, pstate):
         mask = Action.str_mask_to_np_default()
         for i, c in enumerate(str):
-            mask[i] = if c == self.d1 then 1 else 0
+            mask[i] = 1 if c == self.d1 else 0
         return mask
 
 class Substr(Action):
@@ -208,4 +186,218 @@ class GetToken(Action):
         mask[match.start():match:end()] = 1
         return mask
 
+class GetUpTo(Action):
+    """
+    GetUpTo(r)
 
+    if the end of first match over r has index i, return str[0..r]
+    """
+
+    def __init__(self, r):
+        self.name = f"GetUpTo({r})"
+        self.r = r
+
+    def getMatch(self, x):
+        allMatches = re.finditer(ALL_REGEX[self.r], x)
+        match = list(allMatches)[0]
+        return match
+
+    def execute(self, x):
+        match = self.getMatch(x)
+        return x[:match.end()]
+
+    @staticmethod
+    def generate_actions():
+        regTypes = ALL_REGEX.keys()
+        return [GetUpTo(r) for r in regTypes]
+
+    def str_mask_to_np(self, str, pstate):
+        match = self.getMatch(str)
+        mask = Action.str_mask_to_np_default()
+        mask[:match.end()] = 1
+        return mask
+
+class GetFrom(Action):
+    """
+    GetFrom(r)
+
+    if the end of last match over r has index j, return str[j..]
+    """
+
+    def __init__(self, r):
+        self.name = f"GetFrom({r})"
+        self.r = r
+
+    def getMatch(self, x):
+        allMatches = re.finditer(ALL_REGEX[self.r], x)
+        match = list(allMatches)[-1]
+        return match
+
+    def execute(self, x):
+        match = self.getMatch(x)
+        return x[match.end():]
+
+    @staticmethod
+    def generate_actions():
+        regTypes = ALL_REGEX.keys()
+        return [GetFrom(r) for r in regTypes]
+
+    def str_mask_to_np(self, str, pstate):
+        match = self.getMatch(str)
+        mask = Action.str_mask_to_np_default()
+        mask[match.end():] = 1
+        return mask
+
+class GetFirst(Action):
+    """
+    GetFirst(t, i)
+
+    Concat(s1, s2, .. si) where sj is the jth match of t in str
+    """
+
+    def __init__(self, t, i):
+        self.name = f"GetFirst({t},{i})"
+        self.t = t
+        self.i = i
+
+    def getMatch(self, x):
+        allMatches = re.finditer(REGEX[self.t], x)
+        match = list(allMatches)[:self.i + 1]
+        return match
+
+    def execute(self, x):
+        matches = self.getMatch(x)
+        strs = [x[m.start():m.end()] for m in matches]
+        return ''.join(strs)
+
+    @staticmethod
+    def generate_actions():
+        regTypes = REGEX.keys()
+        return [GetFirst(t, i) for t in regTypes for i in INDEX]
+
+    def str_mask_to_np(self, str, pstate):
+        matches = self.getMatch(str)
+        mask = Action.str_mask_to_np_default()
+        for m in matches:
+            mask[m.start():m.end()] = 1
+        return mask
+
+class GetAll(Action):
+    """
+    GetAll(t)
+
+    Concat(s1, s2, ..., sm) where si is the ith match of t in str
+    """
+
+    def __init__(self, t):
+        self.name = f'GetAll({t})'
+        self.t = t
+
+    def getMatch(self, x):
+        allMatches = re.finditer(REGEX[self.t], x)
+        return list(allMatches)
+
+    def execute(self, x):
+        matches = self.getMatch(x)
+        strs = [x[m.start():m.end()] for m in matches]
+        return ''.join(strs)
+
+    @staticmethod
+    def generate_actions():
+        regTypes = REGEX.keys()
+        return [GetAll(t) for t in regTypes]
+
+    def str_mask_to_np(self, str, pstate):
+        matches = self.getMatch(str)
+        mask = Action.str_mask_to_np_default()
+        for m in matches:
+            mask[m.start():m.end()] = 1
+        return mask
+
+class GetSpan(Action):
+    """
+    GetSpan(r1, i1, y1, r2, i2, y2)
+
+    p1 = y1 of i1th match of r1
+    p2 = y2 of i2th match of r2
+    return str[p1...p2]
+    """
+
+    def __init__(self, r1, i1, y1, r2, i2, y2):
+        self.name = f'GetSpan({r1},{i1},{y1},{r2},{i2},{y2})'
+        self.r = (r1, r2)
+        self.i = (i1, i2)
+        self.y = (y1, y2)
+
+    def getP(self, x):
+        matches1 = re.finditer(ALL_REGEX[self.r[0]], x)
+        i1match = list(matches1)[self.i[0]]
+        p1 = i1match.start() if self.y[0] == 'Start' else i1match.end()
+        matches2 = re.finditer(ALL_REGEX[self.r[1]], x)
+        i2match = list(matches2)[self.i[1]]
+        p2 = i2match.start() if self.y[1] == 'Start' else i2match.end()
+        return p1, p2
+
+    def execute(self, x):
+        p1, p2 = self.getP(x)
+        return x[p1:p2]
+
+    @staticmethod
+    def generate_actions():
+        return [GetSpan(r1, i1, y1, r2, i2, y2)
+                for r1 in ALL_REGEX
+                for i1 in INDEX
+                for y1 in BOUNDARY
+                for r2 in ALL_REGEX
+                for i2 in INDEX
+                for y2 in BOUNDARY]
+
+    # pstate usually is only used when we separate operations into several
+    # steps, keep it there just in case we change the design in the future
+    def str_mask_to_np(self, str, pstate):
+        p1, p2 = self.getP(str)
+        mask = Action.str_mask_to_np_default()
+        mask[p1:p2] = 1
+        return mask
+
+class ConstStr(Action):
+    """
+    constant string
+    """
+
+    def __init__(self, c):
+        self.name = f'ConstStr({c})'
+        self.c = c
+
+    def execute(self, x):
+        return self.c
+
+    @staticmethod
+    def generate_actions():
+        return [Const(c) for c in CHARACTERS]
+
+class Commit(Action):
+    """
+    commit the current string for concatenation
+    """
+
+    def __init__(self):
+        self.name = 'Commit'
+
+    def execute(self, x):
+        pass
+
+ALL_ACTION_TYPES = [ToCase,
+                    Replace,
+                    Substr,
+                    GetToken,
+                    GetUpTo,
+                    GetFrom,
+                    GetFirst,
+                    GetAll,
+                    GetSpan,
+                    Const,
+                    Commit
+                   ]
+ALL_ACTIONS = [x for action_type in ALL_ACTION_TYPES
+               for x in action_type.generate_actions()]
