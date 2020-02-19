@@ -3,7 +3,7 @@ import random
 import re
 
 import Action
-import Util
+from Util import *
 
 class Program:
     """
@@ -12,6 +12,8 @@ class Program:
 
     def __init__(self, exprs):
         self.exprs = exprs
+        constraints = [e.constraints for e in exprs]
+        self.constraints = merge_constraints(constraints)
 
     @staticmethod
     def generate():
@@ -30,6 +32,10 @@ class Program:
 
         return actions
 
+    def __str__(self):
+        str_exprs = [str(e) for e in self.exprs]
+        return ' | '.join(str_exprs)
+
 class Expression:
     """
     substring | nesting | nesting of nesting | nesting of substring | constant
@@ -37,6 +43,7 @@ class Expression:
 
     def __init__(self, e):
         self.e = e
+        self.constraints = e.constraints
 
     @staticmethod
     def generate():
@@ -55,20 +62,27 @@ class Expression:
     def to_action(self):
         return self.e.to_action()
 
+    def __str__(self):
+        return str(self.e)
+
 class Composition:
     """
     composition of substrings or nestings
     """
 
-    def __init__(self, e1, e2)
+    def __init__(self, e1, e2):
         self.e1 = e1
         self.e2 = e2
+        self.constraints = merge_constraints([e1.constraints, e2.constraints])
 
     def eval_str(self, str):
         return self.e1.eval_str(self.e2.eval_str(str))
 
     def to_action(self):
         return self.e2.to_action() + self.e1.to_action()
+
+    def __str__(self):
+        return str(f'{str(self.e1)}({str(self.e2)})')
 
 class Constant:
     """
@@ -77,6 +91,7 @@ class Constant:
 
     def __init__(self, c):
         self.c = c
+        self.constraints = ({}, 1)
 
     @staticmethod
     def generate():
@@ -87,6 +102,9 @@ class Constant:
 
     def to_action(self):
         return [Action.ConstStr(self.c)]
+
+    def __str__(self):
+        return f'Const({self.c})'
 
 class Substring:
     """
@@ -109,6 +127,7 @@ class SubstrIndex:
     def __init__(self, k1, k2):
         self.k1 = k1
         self.k2 = k2
+        self.constraints = ({}, k2)
 
     @staticmethod
     def generate():
@@ -124,6 +143,9 @@ class SubstrIndex:
     def to_action(self):
         return [Action.Substr(self.k1, self.k2)]
 
+    def __str__(self):
+        return f'Substr({self.k1},{self.k2})'
+
 class SubstrSpan:
     """
     get a substring by span of regular expressions
@@ -133,11 +155,17 @@ class SubstrSpan:
         self.r = (r1, r2)
         self.i = (i1, i2)
         self.y = (y1, y2)
+        reg_constraints = {
+            r1: step_abs(i1),
+            r2: step_abs(i2)
+        }
+        self.constraints = (reg_constraints, 0)
 
     @staticmethod
     def generate():
-        r1 = random.choice(ALL_REGEX.keys())
-        r2 = random.choice(ALL_REGEX.keys())
+        keys = list(ALL_REGEX.keys())
+        r1 = random.choice(keys)
+        r2 = random.choice(keys)
         i1 = random.choice(INDEX)
         i2 = random.choice(INDEX)
         y1 = random.choice(BOUNDARY)
@@ -155,7 +183,10 @@ class SubstrSpan:
 
     def to_action(self):
         return [Action.GetSpan(self.r[0], self.i[0], self.y[0],
-                               self.r[1], self,i[1], self.y[1])]
+                               self.r[1], self.i[1], self.y[1])]
+
+    def __str__(self):
+        return f'Span({self.r[0]},{self.i[0]},{self.y[0]},{self.r[1]},{self.i[1]},{self.y[1]})'
 
 class Nesting:
     """
@@ -168,7 +199,7 @@ class Nesting:
             GetToken,
             ToCase,
             Replace,
-            GetUpto,
+            GetUpTo,
             GetFrom,
             GetFirst,
             GetAll
@@ -183,20 +214,25 @@ class GetToken:
     def __init__(self, t, i):
         self.t = t
         self.i = i
+        self.constraints = ({t: step_abs(i)}, 0)
 
     @staticmethod
     def generate():
-        t = random.choice(REGEX.keys())
+        keys = list(REGEX.keys())
+        t = random.choice(keys)
         i = random.choice(INDEX)
         return GetToken(t, i)
 
     def eval_str(self, str):
         allMatches = re.finditer(REGEX[self.t], str)
         match = list(allMatches)[self.i]
-        return str[match.begin():match.end()]
+        return str[match.start():match.end()]
 
     def to_action(self):
         return [Action.GetToken(self.t, self.i)]
+
+    def __str__(self):
+        return f'GetToken({self.t},{self.i})'
 
 class ToCase:
     """
@@ -205,6 +241,7 @@ class ToCase:
 
     def __init__(self, s):
         self.s = s
+        self.constraints = ({}, 1)
 
     @staticmethod
     def generate():
@@ -224,6 +261,9 @@ class ToCase:
     def to_action(self):
         return [Action.ToCase(self.s)]
 
+    def __str__(self):
+        return f'ToCase({self.s})'
+
 class Replace:
     """
     replace a delimter with another
@@ -232,6 +272,7 @@ class Replace:
     def __init__(self, d1, d2):
         self.d1 = d1
         self.d2 = d2
+        self.constraints = ({d1: 1}, 1)
 
     @staticmethod
     def generate():
@@ -243,7 +284,10 @@ class Replace:
         return str.replace(self.d1, self.d2)
 
     def to_action(self):
-        return Action.Replace(self.d1, self.d2)
+        return [Action.Replace(self.d1, self.d2)]
+
+    def __str__(self):
+        return f'Replace({self.d1},{self.d2})'
 
 class GetUpTo:
     """
@@ -252,19 +296,24 @@ class GetUpTo:
 
     def __init__(self, r):
         self.r = r
+        self.constraints = ({r: 1}, 1)
 
     @staticmethod
     def generate():
-        r = random.choice(ALL_REGEX.keys())
+        keys = list(ALL_REGEX.keys())
+        r = random.choice(keys)
         return GetUpTo(r)
 
     def eval_str(self, str):
-        allMatches = re.finditer(ALL_REGEX(self.r), str)
+        allMatches = re.finditer(ALL_REGEX[self.r], str)
         match = list(allMatches)[0]
         return str[:match.end()]
 
     def to_action(self):
         return [Action.GetUpTo(self.r)]
+
+    def __str__(self):
+        return f'GetUpto({self.r})'
 
 class GetFrom:
     """
@@ -273,10 +322,12 @@ class GetFrom:
 
     def __init__(self, r):
         self.r = r
+        self.constraints = ({r: 1}, 1)
 
     @staticmethod
     def generate():
-        r = random.choice(ALL_REGEX.keys())
+        keys = list(ALL_REGEX.keys())
+        r = random.choice(keys)
         return GetFrom(r)
 
     def eval_str(self, str):
@@ -287,6 +338,9 @@ class GetFrom:
     def to_action(self):
         return [Action.GetFrom(self.r)]
 
+    def __str__(self):
+        return f'GetFrom({self.r})'
+
 class GetFirst:
     """
     concatenate the first i matches of the given regex t
@@ -295,10 +349,12 @@ class GetFirst:
     def __init__(self, t, i):
         self.t = t
         self.i = i
+        self.constraints = ({t: step_abs(i)}, 1)
 
     @staticmethod
     def generate():
-        t = random.choice(REGEX.keys())
+        keys = list(REGEX.keys())
+        t = random.choice(keys)
         i = random.choice(INDEX)
         return GetFirst(t, i)
 
@@ -310,6 +366,9 @@ class GetFirst:
     def to_action(self):
         return [Action.GetFirst(self.t, self.i)]
 
+    def __str__(self):
+        return f'GetFirst({self.t},{self.i})'
+
 class GetAll:
     """
     concatenate all the matches of the given regex t
@@ -317,15 +376,20 @@ class GetAll:
 
     def __init__(self, t):
         self.t = t
+        self.constraints = ({t: 1}, 1)
 
     @staticmethod
     def generate():
-        t = random.choice(REGEX.keys())
+        keys = list(REGEX.keys())
+        t = random.choice(keys)
         return GetAll(t)
 
     def eval_str(self, str):
         allMatches = re.finditer(REGEX[self.t], str)
         return ''.join([str[m.start():m.end()] for m in allMatches])
 
-    def to_action(self, str):
+    def to_action(self):
         return [Action.GetAll(self.t)]
+
+    def __str__(self):
+        return f'GetAll({self.t})'

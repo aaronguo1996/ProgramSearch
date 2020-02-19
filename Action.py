@@ -13,8 +13,9 @@ import random
 import traceback
 import pickle
 
-import Util
-import RobState
+from Util import *
+from RobState import *
+from Error import *
 
 class Action:
 
@@ -51,7 +52,7 @@ class Action:
             check_change(pstate.committed, new_committed)
             # used when rolling out
             for c, o in zip(new_committed, pstate.outputs):
-                if output == "":
+                if o == "":
                     continue
                 elif not o.startswith(c):
                     raise ConcatError
@@ -101,7 +102,7 @@ class ToCase(Action):
     def generate_actions():
         return [ToCase('Proper'),
                 ToCase('AllCaps'),
-                ToCase 'Lower']
+                ToCase('Lower')]
 
 class Replace(Action):
     """
@@ -142,7 +143,7 @@ class Substr(Action):
         self.k1 = k1
         self.k2 = k2
 
-    def execute(self, x)
+    def execute(self, x):
         return x[self.k1:self.k2]
 
     @staticmethod
@@ -374,7 +375,7 @@ class ConstStr(Action):
 
     @staticmethod
     def generate_actions():
-        return [Const(c) for c in CHARACTERS]
+        return [ConstStr(c) for c in CHARACTERS]
 
 class Commit(Action):
     """
@@ -387,6 +388,10 @@ class Commit(Action):
     def execute(self, x):
         pass
 
+    @staticmethod
+    def generate_actions():
+        return [Commit()]
+
 ALL_ACTION_TYPES = [ToCase,
                     Replace,
                     Substr,
@@ -396,7 +401,7 @@ ALL_ACTION_TYPES = [ToCase,
                     GetFirst,
                     GetAll,
                     GetSpan,
-                    Const,
+                    ConstStr,
                     Commit
                    ]
 ALL_ACTIONS = [x for action_type in ALL_ACTION_TYPES

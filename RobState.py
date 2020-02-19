@@ -17,5 +17,8 @@ class RobState:
     def __str__(self):
         return self.__repr__()
 
-    def to_np(self):
-
+    @staticmethod
+    def new(inputs, outputs):
+        scratch = [x for x in inputs]
+        committed = ["" for _ in inputs]
+        return RobState(inputs, scratch, committed, outputs, [])
