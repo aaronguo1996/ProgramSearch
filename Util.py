@@ -29,6 +29,24 @@ ALL_REGEX = {}
 ALL_REGEX.update(DELIM_REGEX)
 ALL_REGEX.update(REGEX)
 
+# parameters for encoding
+CHAR_EMBED_DIM = 20
+KERNEL_SIZE = 5
+COLUMN_ENCODING_DIM = 32
+ACTION_EMBED_DIM = 32
+DENSE_LAYERS = 10
+GROWTH_RATE = 128
+STR_LEN = 100
+H_OUT = 128
+N_IO = 4
+
+# parameters for training
+BATCH_SIZE = 4000
+TRAIN_ITERATIONS = 50000
+N_ENVS_PER_ROLLOUT = 2
+RL_ITERATIONS = 12000
+N_PROCESSES = 8
+
 def str_to_np(list_of_str):
     """
     turn a list of strings into a numpy representation

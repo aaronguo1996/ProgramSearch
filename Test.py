@@ -69,5 +69,14 @@ def io_generation_test4():
           Action.Commit()]
     print(execute_actions(fs, pstate))
 
+def io_generation_test5():
+    pstate = RobState.RobState.new(["(hello)1)23", "(mis)ter)123"],
+                                   ["HELLO","MIS"])
+    fs = [Action.GetSpan("(", 0, "End", ")", 0, "Start"),
+          Action.ToCase("AllCaps"),
+          Action.Commit()]
+
+    print(execute_actions(fs, pstate))
+
 if __name__ == '__main__':
-    io_generation_test4()
+    io_generation_test5()

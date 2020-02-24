@@ -89,3 +89,11 @@ def generate_examples(num_of_examples, verbose=False):
             # in verbose mode, print out the exception message
             if verbose:
                 print('Error', e, 'encountered, retrying...')
+
+def train(agent):
+    for i in range(RL_ITERATIONS):
+        envs = []
+        for _ in range(N_ENVS_PER_ROLLOUT):
+            _, inputs, outputs = generate_FIO(4)
+            env = ROBENV(inputs, outputs)
+            envs.append(env)
