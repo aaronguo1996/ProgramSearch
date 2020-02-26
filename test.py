@@ -2,6 +2,7 @@
 Test cases
 """
 import action
+import agent
 from train import *
 from util import *
 
@@ -81,5 +82,18 @@ def io_generation_test5():
 def io_generation_test6():
     print(get_supervised_sample())
 
-if __name__ == '__main__':
-    io_generation_test6()
+def train_test0():
+    states, actions = get_supervised_sample()
+    agent = agent.Agent(action.ALL_ACTIONS)
+    for i in range(400):
+        loss = agent.learn_supervised(states, actions)
+        if i%10 == 0: print(f"iteration {i}, loss: {loss.item()}")
+    pred_actions = agent.best_actions(S)
+    print("real actions:")
+    print(actions)
+    print("model actions:")
+    print(pred_actions)
+
+ __name__ == '__main__':
+    #io_generation_test6()
+    train_test0()

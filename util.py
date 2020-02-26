@@ -3,7 +3,7 @@ import string
 import re
 
 N_EXPRS = 6
-MAX_LEN = 5
+MAX_CONST_LEN = 5
 MAX_STR_LEN = 36
 MAX_MASK_LEN = 7
 CHARACTERS = string.printable[:-4]

@@ -5,6 +5,7 @@ import exrex
 
 import action
 import expression
+import pregex as pre
 from util import *
 
 """
@@ -34,11 +35,11 @@ def insert_regex(in_str, choice_len, regex_constraint):
                                                k=num_of_inserts))
 
         for i in indices_of_inserts:
-            in_str[i] = exrex.getone(ALL_REGEX[r])
+            in_str[i] = pre.create(ALL_REGEX[r]).sample()
 
         # print('Expected', desired_counts, r)
         # print('Actual number is', actual_counts)
-        print('After insert', ''.join(in_str))
+        # print('After insert', ''.join(in_str))
         insert_pos -= indices_of_inserts
 
     str = ''.join(in_str)
@@ -65,11 +66,11 @@ def generate_examples(num_of_examples, verbose=False):
 
     # generate num_of_examples
     success_cnt = 0
-    while True:
+    for _ in range(20):
         try:
             # we already have desired number of I/O examples
             if success_cnt == num_of_examples:
-                break
+                return prog, inputs, outputs
 
             # we generate new inputs first, operate the program over the input
             in_str = generate_valid_input(prog.constraints)
@@ -95,4 +96,4 @@ def generate_examples(num_of_examples, verbose=False):
             if verbose:
                 print('Error', e, 'encountered, retrying...')
 
-    return prog, inputs, outputs
+    return generate_examples(num_of_examples, verbose)

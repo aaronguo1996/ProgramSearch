@@ -3,6 +3,7 @@ import random
 import re
 
 import action
+import pregex as pre
 from util import *
 
 class Program:
@@ -48,11 +49,11 @@ class Expression:
     @staticmethod
     def generate():
         choices = [
-            Substring.generate,
-            Nesting.generate,
+            lambda: Substring.generate(),
+            lambda: Nesting.generate(),
             lambda: Composition(Nesting.generate(), Nesting.generate()),
             lambda: Composition(Nesting.generate(), Substring.generate()),
-            Constant.generate
+            lambda: Constant.generate()
         ]
         return Expression(random.choice(choices)())
 
@@ -91,11 +92,11 @@ class Constant:
 
     def __init__(self, c):
         self.c = c
-        self.constraints = ({}, 1)
+        self.constraints = ({}, 0)
 
     @staticmethod
     def generate():
-        l = random.choice(list(range(1, MAX_STR_LEN)))
+        l = random.choice(list(range(1, MAX_CONST_LEN)))
         c = pre.create("."*l).sample()
         return Constant(c)
 
@@ -129,7 +130,7 @@ class SubstrIndex:
     def __init__(self, k1, k2):
         self.k1 = k1
         self.k2 = k2
-        self.constraints = ({}, max(abs(k1), k2))
+        self.constraints = ({}, max(abs(k1), abs(k2)))
 
     @staticmethod
     def generate():
@@ -165,9 +166,8 @@ class SubstrSpan:
 
     @staticmethod
     def generate():
-        keys  = list(ALL_REGEX.keys())
-        r1 = random.choice(keys)
-        r2 = random.choice(keys)
+        r1 = RegexGen.generate()
+        r2 = RegexGen.generate()
         i1 = random.choice(INDEX)
         i2 = random.choice(INDEX)
         y1 = random.choice(BOUNDARY)
@@ -220,8 +220,7 @@ class GetToken:
 
     @staticmethod
     def generate():
-        keys = list(REGEX.keys())
-        t = random.choice(keys)
+        t = RegexGen.generate_type()
         i = random.choice(INDEX)
         return GetToken(t, i)
 
@@ -243,7 +242,7 @@ class ToCase:
 
     def __init__(self, s):
         self.s = s
-        self.constraints = ({}, 1)
+        self.constraints = ({'Alphanum': 1}, 1)
 
     @staticmethod
     def generate():
@@ -302,8 +301,7 @@ class GetUpTo:
 
     @staticmethod
     def generate():
-        keys = list(ALL_REGEX.keys())
-        r = random.choice(keys)
+        r = RegexGen.generate()
         return GetUpTo(r)
 
     def eval_str(self, str):
@@ -328,8 +326,7 @@ class GetFrom:
 
     @staticmethod
     def generate():
-        keys = list(ALL_REGEX.keys())
-        r = random.choice(keys)
+        r = RegexGen.generate()
         return GetFrom(r)
 
     def eval_str(self, str):
@@ -355,8 +352,7 @@ class GetFirst:
 
     @staticmethod
     def generate():
-        keys = list(REGEX.keys())
-        t = random.choice(keys)
+        t = RegexGen.generate_type()
         i = random.choice(INDEX)
         return GetFirst(t, i)
 
@@ -382,8 +378,7 @@ class GetAll:
 
     @staticmethod
     def generate():
-        keys = list(REGEX.keys())
-        t = random.choice(keys)
+        t = RegexGen.generate_type()
         return GetAll(t)
 
     def eval_str(self, str):
@@ -395,3 +390,21 @@ class GetAll:
 
     def __str__(self):
         return f'GetAll({self.t})'
+
+class RegexGen:
+    @staticmethod
+    def generate_type():
+        type_choice = random.choice(list(REGEX.keys()))
+        return type_choice
+
+    @staticmethod
+    def generate_delim():
+        delim_choice = random.choice(list(DELIM_REGEX.keys()))
+        return delim_choice
+
+    @staticmethod
+    def generate():
+        if np.random.random() < 0.5:
+            return RegexGen.generate_type()
+        else:
+            return RegexGen.generate_delim()
