@@ -1,11 +1,10 @@
-from RobState import RobState
-from RobEnv import RobEnv
-from Agent import Agent
-from Sample import generate_examples
-from Action import ALL_ACTIONS
-from GenData import get_supervised_batchsize, GenData
-from Util import *
-import Action
+from robot_env import RobEnv
+from agent import Agent
+from sample import generate_examples
+from action import ALL_ACTIONS, RobState
+from data_generation import get_supervised_batchsize, GenData
+from util import *
+import action
 
 import time
 
@@ -17,7 +16,7 @@ def get_rollout(env, actions, max_iter):
     s = env.reset()
 
     for i in range(max_iter):
-        a = Action.Commit() if i >= len(actions) else actions[i]
+        a = action.Commit() if i >= len(actions) else actions[i]
         state, reward, done = env.step(a)
         trace.append((s, a, reward, state, done))
         s = state

@@ -2,8 +2,8 @@ import string
 import random
 import re
 
-import Action
-from Util import *
+import action
+from util import *
 
 class Program:
     """
@@ -28,7 +28,7 @@ class Program:
 
         for e in self.exprs:
             actions += e.to_action()
-            actions.append(Action.Commit())
+            actions.append(action.Commit())
 
         return actions
 
@@ -95,13 +95,15 @@ class Constant:
 
     @staticmethod
     def generate():
-        return Constant(random.choice(CHARACTERS))
+        l = random.choice(list(range(1, MAX_STR_LEN)))
+        c = pre.create("."*l).sample()
+        return Constant(c)
 
     def eval_str(self, str):
         return self.c
 
     def to_action(self):
-        return [Action.ConstStr(self.c)]
+        return [action.ConstStr(self.c)]
 
     def __str__(self):
         return f'Const({self.c})'
@@ -127,7 +129,7 @@ class SubstrIndex:
     def __init__(self, k1, k2):
         self.k1 = k1
         self.k2 = k2
-        self.constraints = ({}, k2)
+        self.constraints = ({}, max(abs(k1), k2))
 
     @staticmethod
     def generate():
@@ -141,7 +143,7 @@ class SubstrIndex:
         return str[self.k1:self.k2]
 
     def to_action(self):
-        return [Action.Substr(self.k1, self.k2)]
+        return [action.Substr(self.k1, self.k2)]
 
     def __str__(self):
         return f'Substr({self.k1},{self.k2})'
@@ -163,7 +165,7 @@ class SubstrSpan:
 
     @staticmethod
     def generate():
-        keys = list(ALL_REGEX.keys())
+        keys  = list(ALL_REGEX.keys())
         r1 = random.choice(keys)
         r2 = random.choice(keys)
         i1 = random.choice(INDEX)
@@ -182,7 +184,7 @@ class SubstrSpan:
         return str[p1:p2]
 
     def to_action(self):
-        return [Action.GetSpan(self.r[0], self.i[0], self.y[0],
+        return [action.GetSpan(self.r[0], self.i[0], self.y[0],
                                self.r[1], self.i[1], self.y[1])]
 
     def __str__(self):
@@ -229,7 +231,7 @@ class GetToken:
         return str[match.start():match.end()]
 
     def to_action(self):
-        return [Action.GetToken(self.t, self.i)]
+        return [action.GetToken(self.t, self.i)]
 
     def __str__(self):
         return f'GetToken({self.t},{self.i})'
@@ -259,7 +261,7 @@ class ToCase:
             raise ValueException
 
     def to_action(self):
-        return [Action.ToCase(self.s)]
+        return [action.ToCase(self.s)]
 
     def __str__(self):
         return f'ToCase({self.s})'
@@ -284,7 +286,7 @@ class Replace:
         return str.replace(self.d1, self.d2)
 
     def to_action(self):
-        return [Action.Replace(self.d1, self.d2)]
+        return [action.Replace(self.d1, self.d2)]
 
     def __str__(self):
         return f'Replace({self.d1},{self.d2})'
@@ -310,7 +312,7 @@ class GetUpTo:
         return str[:match.end()]
 
     def to_action(self):
-        return [Action.GetUpTo(self.r)]
+        return [action.GetUpTo(self.r)]
 
     def __str__(self):
         return f'GetUpto({self.r})'
@@ -336,7 +338,7 @@ class GetFrom:
         return str[match.end():]
 
     def to_action(self):
-        return [Action.GetFrom(self.r)]
+        return [action.GetFrom(self.r)]
 
     def __str__(self):
         return f'GetFrom({self.r})'
@@ -364,7 +366,7 @@ class GetFirst:
         return ''.join([str[m.start():m.end()] for m in matches])
 
     def to_action(self):
-        return [Action.GetFirst(self.t, self.i)]
+        return [action.GetFirst(self.t, self.i)]
 
     def __str__(self):
         return f'GetFirst({self.t},{self.i})'
@@ -389,7 +391,7 @@ class GetAll:
         return ''.join([str[m.start():m.end()] for m in allMatches])
 
     def to_action(self):
-        return [Action.GetAll(self.t)]
+        return [action.GetAll(self.t)]
 
     def __str__(self):
         return f'GetAll({self.t})'

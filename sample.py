@@ -3,10 +3,9 @@ import string
 import re
 import exrex
 
-import Action
-import Expression
-from RobState import *
-from Util import *
+import action
+import expression
+from util import *
 
 """
 random sampling of programs
@@ -16,7 +15,7 @@ def generate_program():
     """
     generate a random string manipulation program
     """
-    return Expression.Program.generate()
+    return expression.Program.generate()
 
 def insert_regex(in_str, choice_len, regex_constraint):
     """
@@ -39,7 +38,7 @@ def insert_regex(in_str, choice_len, regex_constraint):
 
         # print('Expected', desired_counts, r)
         # print('Actual number is', actual_counts)
-        # print('After insert', in_str)
+        print('After insert', ''.join(in_str))
         insert_pos -= indices_of_inserts
 
     str = ''.join(in_str)
@@ -59,7 +58,7 @@ def generate_examples(num_of_examples, verbose=False):
     generate a function, inputs, outputs triple
     """
 
-    prog = Expression.Program.generate()
+    prog = expression.Program.generate()
     print('Generated program:', prog)
     inputs = []
     outputs = []
@@ -76,10 +75,16 @@ def generate_examples(num_of_examples, verbose=False):
             in_str = generate_valid_input(prog.constraints)
             # print('Input:', in_str)
             out_state = execute_actions(prog.to_action(),
-                                        RobState.new([in_str], [""]))
+                                        action.RobState.new([in_str], [""]))
             out_str = out_state.committed[0]
             # print('Output:', out_str)
             # print('Program:', prog)
+            # ensure the output str within len range
+            if len(out_str) > MAX_STR_LEN:
+                continue
+            # ensure the output str is not empty, to be interesting
+            if len(out_str) == 0:
+                continue
 
             # store the successful I/O pairs
             inputs.append(in_str)
@@ -90,10 +95,4 @@ def generate_examples(num_of_examples, verbose=False):
             if verbose:
                 print('Error', e, 'encountered, retrying...')
 
-def train(agent):
-    for i in range(RL_ITERATIONS):
-        envs = []
-        for _ in range(N_ENVS_PER_ROLLOUT):
-            _, inputs, outputs = generate_FIO(4)
-            env = ROBENV(inputs, outputs)
-            envs.append(env)
+    return prog, inputs, outputs

@@ -3,7 +3,7 @@ import torch.nn as nn
 from namedtensor import ntorch
 import torch.nn.functional as F
 
-from Util import *
+from util import *
 
 class DenseLayer(nn.Module):
     """

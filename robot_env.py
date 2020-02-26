@@ -1,4 +1,5 @@
-from RobState import RobState
+from action import RobState
+from util import *
 
 class RobEnv:
     def __init__(self, inputs, outputs,
@@ -27,7 +28,7 @@ class RobEnv:
             # execute the action over the previous state
             self.pstate = action(self.pstate)
             next_ob = self.pstate.to_np(self.render_kind)
-        except e:
+        except Exception as e:
             # if the execution fails, possible reasons:
             # commit a wrong string, no change operation or other index error
             if self.verbose:
@@ -36,7 +37,7 @@ class RobEnv:
             self.done = True
             # what state should we put here?? why do we design an empty string
             # pairs for the crash state? pretend it didn't happen?
-            self.last_step = RobState.crash_np(self.render_kind), -1.0, True
+            self.last_step = RobState.to_crash_np(self.render_kind), -1.0, True
 
         # assign rewards
         reward = 1.0 if self.pstate.committed == self.pstate.outputs else 0.0
