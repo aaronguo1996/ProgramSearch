@@ -2,9 +2,12 @@ from RobState import RobState
 from RobEnv import RobEnv
 from Agent import Agent
 from Sample import generate_examples
-from GenData import get_supervised_batchsize, GenData, makeTestdata
+from Action import ALL_ACTIONS
+from GenData import get_supervised_batchsize, GenData
 from Util import *
 import Action
+
+import time
 
 def get_rollout(env, actions, max_iter):
     """
@@ -23,7 +26,7 @@ def get_rollout(env, actions, max_iter):
     return trace
 
 def get_supervised_sample(render_kind={'render_past_actions' : False}):
-    prog, inputs, outputs = generate_examples(N_IOS)
+    prog, inputs, outputs = generate_examples(N_IO)
     env = RobEnv(inputs, outputs, render_kind)
     trace = get_rollout(env, prog.to_action(), 30)
 
@@ -66,7 +69,17 @@ def sample_from_traces(traces):
     return states, rewards, actions, prev_states
 
 def train_supervised(agent):
-    for i, (states, actions) in enumerate(get_supervised_batch()):
+    if USE_PARALLEL:
+        dataqueue = GenData(lambda: get_supervised_sample(),
+                            n_processes=N_PROCESSES,
+                            batchsize=BATCH_SIZE,
+                            max_size=100)
+
+    for i, (states, actions) in enumerate(
+            dataqueue.batchIterator() if USE_PARALLEL else \
+            get_supervised_batchsize(lambda: get_supervised_sample(),
+                                     batchsize = BATCH_SIZE)):
+
         if agent.train_iterations >= TRAIN_ITERATIONS:
            break
 
@@ -99,6 +112,7 @@ def train_supervised(agent):
 
 def train_rl(agent):
     for i in range(RL_ITERATIONS):
+        tot_start = time.time()
         envs = []
         for _ in range(N_ENVS_PER_ROLLOUT):
             _, inputs, outputs = generate_examples(N_IO)
@@ -106,6 +120,47 @@ def train_rl(agent):
             envs.append(env)
 
         traces = agent.get_rollouts(envs, N_ROLLOUTS)
-        states, rewards, past_actions, prev_states = sample_from_traces(traces)
-        
+        states, rewards, reward_actions, reward_states = sample_from_traces(traces)
+        loss = agent.value_fun_optim_step(states, rewards)
 
+        # train the policy network
+        if len(reward_states) > 0:
+            ploss = agent.learn_supervised(reward_states, reward_actions)
+            ploss = ploss.item()
+        else:
+            ploss = 0.0
+
+        if i % PRINT_FREQ == 0 and i != 0:
+            print(f"Iteration: {i}, Value loss: {loss.item()}, \
+                  Policy loss: {ploss}, Total time: {tot_end - tot_start}")
+            agent.save(SAVE_PATH)
+
+        tot_end = time.time()
+
+def initialize_value_as_policy(agent):
+    policy_params = agent.nn.named_parameters()
+    value_params = agent.Vnn.named_parameters()
+
+    for name, param in policy_params:
+        if name in dict_value_params and not "action_decoder" in name:
+            print(f"copying {name}")
+            dict_value_params[name].data.copy_(param.data)
+        else:
+            print(f"skipped {name}")
+
+if __name__ == '__main__':
+    #load model or create model
+    agent = Agent(ALL_ACTIONS)
+    try:
+        agent.load(LOAD_PATH, policy_only =  True)
+        print("loaded model")
+    except FileNotFoundError:
+        print ("no saved model found ... training from scratch")
+    #train
+    train_supervised(agent)
+
+    #optionally, can do this:
+    initialize_value_as_policy(agent)
+
+    #rl train, whatever that entails
+    train_rl(agent)

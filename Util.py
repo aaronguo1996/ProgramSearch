@@ -46,6 +46,14 @@ TRAIN_ITERATIONS = 50000
 N_ENVS_PER_ROLLOUT = 2
 RL_ITERATIONS = 12000
 N_PROCESSES = 8
+USE_PARALLEL = True
+
+# model store
+SAVE_PATH = 'models/model_'
+LOAD_PATH = 'models/model_'
+PRINT_FREQ = 2
+SAVE_FREQ = 100
+TEST_FREQ = 1000
 
 def str_to_np(list_of_str):
     """

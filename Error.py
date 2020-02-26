@@ -14,6 +14,6 @@ class SmallSampleError(Exception):
 
 def check_change(old, new):
     if str(old) == str(new):
-        print('Old:', str(old))
-        print('New:', str(new))
+        # print('Old:', str(old))
+        # print('New:', str(new))
         raise NoChangeError

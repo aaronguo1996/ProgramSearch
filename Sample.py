@@ -37,9 +37,9 @@ def insert_regex(in_str, choice_len, regex_constraint):
         for i in indices_of_inserts:
             in_str[i] = exrex.getone(ALL_REGEX[r])
 
-        print('Expected', desired_counts, r)
-        print('Actual number is', actual_counts)
-        print('After insert', in_str)
+        # print('Expected', desired_counts, r)
+        # print('Actual number is', actual_counts)
+        # print('After insert', in_str)
         insert_pos -= indices_of_inserts
 
     str = ''.join(in_str)
@@ -74,12 +74,12 @@ def generate_examples(num_of_examples, verbose=False):
 
             # we generate new inputs first, operate the program over the input
             in_str = generate_valid_input(prog.constraints)
-            print('Input:', in_str)
+            # print('Input:', in_str)
             out_state = execute_actions(prog.to_action(),
                                         RobState.new([in_str], [""]))
             out_str = out_state.committed[0]
-            print('Output:', out_str)
-            print('Program:', prog)
+            # print('Output:', out_str)
+            # print('Program:', prog)
 
             # store the successful I/O pairs
             inputs.append(in_str)

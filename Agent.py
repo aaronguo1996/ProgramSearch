@@ -3,6 +3,8 @@ import torch.nn as nn
 from namedtensor import ntorch
 import torch.nn.functional as F
 
+from Util import *
+
 class DenseLayer(nn.Module):
     """
     one layer in the dense network
@@ -77,7 +79,7 @@ class Encoder(nn.Module):
 
         return h
 
-class Module(nn.Module):
+class Model(nn.Module):
     def __init__(self, num_of_actions, is_value_net = False):
         super().__init__()
         self.is_value_net = is_value_net
@@ -90,15 +92,14 @@ class Module(nn.Module):
         # max pooling
         self.pooling = lambda x: x.max('Examples')[0]
 
-        if value_net:
-            self.action_decoder = ntorch.nn.Linear(args.h_out, 2).spec('h',
-                                                                       'value')
-            self.lossfn = ntorch.nn.NLLLoss().spec('value')
+        if is_value_net:
+            self.action_decoder = ntorch.nn.Linear(H_OUT, 2).spec('h', 'value')
+            self.loss_fn = ntorch.nn.NLLLoss().spec('value')
         else:
-            self.action_decoder = ntorch.nn.Linear(args.h_out,
-                                                   num_actions).spec('h',
-                                                                     'actions')
-            self.lossfn = ntorch.nn.CrossEntropyLoss().spec('actions')
+            self.action_decoder = ntorch.nn.Linear(H_OUT,
+                                                   num_of_actions).spec('h',
+                                                                        'actions')
+            self.loss_fn = ntorch.nn.CrossEntropyLoss().spec('actions')
 
         self.opt = torch.optim.Adam(self.parameters(), lr=0.001)
 
@@ -119,12 +120,18 @@ class Module(nn.Module):
         self.opt.zero_grad()
 
         output_dists = self(chars, masks, last_actions)
-        loss = self.lossfn(output_dists, targets)
+        loss = self.loss_fn(output_dists, targets)
         loss.backward()
         self.opt.step()
         return loss
 
-class Agent(nn.Module):
+    def save(self, save_path):
+        torch.save(self.state_dict(), save_path)
+
+    def load(self, load_path):
+        self.load_state_dict(torch.load(load_path))
+
+class Agent:
     def __init__(self, actions, use_cuda=None):
         self.actions = actions
         self.idx = {x.name: i for i, x in enumerate(actions)}
@@ -137,12 +144,10 @@ class Agent(nn.Module):
 
         if self.use_cuda:
             self.nn = Model(len(actions)).cuda()
-            if self.value_net:
-                self.Vnn = Model(len(actions), value_net=True).cuda()
+            self.Vnn = Model(len(actions), is_value_net=True).cuda()
         else:
             self.nn = Model(len(actions))
-            if self.value_net:
-                self.Vnn = Model(len(actions), value_net=True)
+            self.Vnn = Model(len(actions), is_value_net=True)
 
     def state_to_sensor(self, states):
         inputs, scratchs, committeds, outputs, masks, last_actions = zip(*states)
@@ -224,7 +229,7 @@ class Agent(nn.Module):
         active_states = []
         n_initial_envs = len(initial_envs)
 
-        # initialization, why do we need multiple environments?
+        # initialization, execute the actions simultaneously in several envs
         for env in initial_envs:
             env.reset()
             for _ in range(n_rollouts):
@@ -247,10 +252,19 @@ class Agent(nn.Module):
                     continue
                 a = next(action_list_iter)
                 ss, r, done = envs[j].step(a)
-                if i==0:
+                if i == 0:
                     prev_s = envs[j].last_step[0]
                 else:
-                    prev_s = traces[j][-1].s
-                traces[j].append( TraceEntry(prev_s, a, r, ss, done) )
+                    prev_s = traces[j][-1][0]
+                traces[j].append((prev_s, a, r, ss, done))
 
         return traces
+
+    def save(self, save_path):
+        self.nn.save(save_path)
+        self.Vnn.save(save_path + 'vnet')
+
+    def load(self, load_path, policy_only = False):
+        self.nn.load(load_path)
+        if not policy_only:
+            self.Vnn.load(load_path + 'vnet')
