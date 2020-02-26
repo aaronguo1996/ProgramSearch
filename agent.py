@@ -269,4 +269,149 @@ class Agent:
         if not policy_only:
             self.Vnn.load(load_path + 'vnet')
 
+    def smc_rollout(self, env, max_beam_size=1000, max_iter=30, verbose=False, max_nodes_expanded=2*1024*30*10, timeout=None, sample_only=False, track_edit_distance=False): #value_filter_size=4000):
+        env.reset()
+        if track_edit_distance:
+            best_score, best_ps = edit_distance( env )
 
+        stats = {
+            'nodes_expanded': 0,
+            'policy_runs': 0,
+            'policy_gpu_runs': 0,
+            'value_runs': 0,
+            'value_gpu_runs': 0,
+            'start_time': time.time(),
+            'best_ps': best_ps,
+            'best_score': best_score
+                }
+
+        ParticleEntry = namedtuple("ParticleEntry", "env frequency")
+
+        n_particles = 1 #1000
+        while stats['nodes_expanded'] <= max_nodes_expanded:
+            if timeout:
+                if time.time() - stats['start_time'] > timeout: break
+
+            env.reset()
+            particles = [ ParticleEntry(env.copy(), n_particles) ] #for _ in range(beam_size)]
+            for t in range(max_iter):
+                # print("particle iteration", t)
+                # print("particles buttons ")
+                p_btns = [p.env.pstate.past_buttons for p in particles]
+                p_weights = [p.frequency for p in particles]
+                # for xxxx in zip(p_btns, p_weights):
+                #     print (xxxx)
+                # input("hi")
+                state_list = [particle.env.last_step[0] for particle in particles]
+                prev_particles_freqs = np.array([particle.frequency for particle in particles])
+                # get the current log-likelihood for extending the head of the beam
+                #print ("something here doesn't matter", particles[0].env.pstate.past_buttons)
+                #get samples
+                # print("prev_particles_freqs", prev_particles_freqs)
+                lls = self.get_actions(state_list)
+                # print("lls shape", lls.shape)
+                #import pdb; pdb.set_trace()
+
+
+                ps = ntorch.exp(lls)
+                stats['policy_runs'] += len(state_list)
+                stats['policy_gpu_runs'] += 1
+                samples = []
+                for b, particle in enumerate(particles):
+                    # print("b", b)
+                    try:
+                        # print(ps[{"batch":b}]._tensor.shape)
+                        # print(int(prev_particles_freqs[b]))
+                        sampleFreqs = torch.multinomial(ps[{"batch":b}]._tensor, int(prev_particles_freqs[b]), True) #TODO
+                        # print("sampl freqs", sampleFreqs)
+                        # print("doubled", sampleFreqs.double())
+                        #import pdb; pdb.set_trace()
+                    except RuntimeError:
+                        import pdb; pdb.set_trace()
+                    #sample from lls for each slice with 
+                    hist = torch.histc(sampleFreqs.double(), bins=len(self.actions), min=0, max=len(self.actions)-1 )
+                    # print("hist", hist)
+                    # print("np where", np.where(hist>0))
+
+                    assert hist.shape[0] == len(self.actions)
+
+                    for action_id, frequency in enumerate(hist): #nActions
+                        #print(action_id, frequency)
+                        if frequency <= 0: continue
+
+                        #action = self.idx_to_action[argmax[{"batch": int(s_a_idx[0]), "actions": int(s_a_idx[1])}].item()]
+                        action = self.idx_to_action[action_id]
+
+
+                        env_copy = particle.env.copy()
+                        # print (" ==================== here we have a env copy ")
+                        # print (env_copy.pstate.past_buttons)
+
+                        # print ("we tried to step on this action ")
+                        # print(action)
+
+                        env_copy.step(action)
+                        if track_edit_distance: 
+                            score, output_strs = edit_distance( env_copy )
+                            if score > stats['best_score']: 
+                                stats['best_score'] = score
+                                stats['best_ps'] = output_strs
+
+                        # print ('the result of the step is . . ? ?', env_copy.pstate.past_buttons)
+                        # print ('has reward ', env_copy.last_step[1])
+                        stats['nodes_expanded'] += 1
+                        if env_copy.last_step[1] == -1: #reward
+                            if verbose: print ("crasherinoed!")
+                            continue
+                        if env_copy.last_step[1] == 1: #reward
+                            #solutions.append(env_copy)
+                            if verbose:
+                                print ("success ! ")
+                                print( f"success! in iteration {t}" )
+                                print(stats)
+                            hit = True
+                            solution = env_copy
+                            stats['end_time'] = time.time()
+
+                            ####printing success###
+                            print(env_copy.pstate.past_buttons)
+                            return hit, solution, stats
+
+                        samples.append(ParticleEntry(env_copy, frequency))
+                sample_freqs = [sample.frequency for sample in samples] 
+
+                #get values for samples
+                new_states = [p.env.last_step[0] for p in samples]
+                if not new_states: break
+
+                if sample_only:
+                    distances = [0. for _ in new_states]
+                else:
+                    value_ll = self.compute_values(new_states)
+                    distances = [ value_ll[{"batch":i, "value":1}].item() for i, _ in enumerate(new_states)] #whatever, TODO 
+                    stats['value_gpu_runs'] += 1
+                    stats['value_runs'] += len(new_states)
+                #print('distance', distances[0])
+                #Resample:
+                logWeights = [math.log(p.frequency) + distance for p, distance in zip(samples, distances)] #distance
+                ps = [ math.exp(lw - max(logWeights)) for lw in logWeights ]
+                ps = [p/sum(ps) for p in ps]
+                sampleFrequencies = np.random.multinomial(n_particles, ps)
+                #print(sampleFrequencies)
+                population = []
+                for particle, frequency in zip(samples, sampleFrequencies):
+                    if frequency > 0:
+                        p = ParticleEntry(particle.env, frequency)
+                        population.append(p)
+
+                particles = population
+
+            if n_particles < max_beam_size:
+                n_particles *= 2
+                print("doubling sample size to###########################", n_particles)
+        if verbose:
+            print(stats)
+        hit = False
+        solution = None
+        stats['end_time'] = time.time()
+        return hit, solution, stats    
