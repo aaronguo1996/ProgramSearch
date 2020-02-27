@@ -104,7 +104,11 @@ class Constant:
         return self.c
 
     def to_action(self):
-        return [action.ConstStr(self.c)]
+        r  = [action.ConstStr(self.c[0])]
+        for const in self.c[1:]:
+            r.append(action.Commit())
+            r.append(action.ConstStr(const))
+        return r
 
     def __str__(self):
         return f'Const({self.c})'
@@ -144,7 +148,8 @@ class SubstrIndex:
         return str[self.k1:self.k2]
 
     def to_action(self):
-        return [action.Substr(self.k1, self.k2)]
+        return [action.Substr1(self.k1),
+                action.Substr2(self.k2)]
 
     def __str__(self):
         return f'Substr({self.k1},{self.k2})'
@@ -184,8 +189,12 @@ class SubstrSpan:
         return str[p1:p2]
 
     def to_action(self):
-        return [action.GetSpan(self.r[0], self.i[0], self.y[0],
-                               self.r[1], self.i[1], self.y[1])]
+        return [action.GetSpan1(self.r[0]),
+                action.GetSpan2(self.i[0]),
+                action.GetSpan3(self.y[0]),
+                action.GetSpan4(self.r[1]),
+                action.GetSpan5(self.i[1]),
+                action.GetSpan6(self.y[1])]
 
     def __str__(self):
         return f'Span({self.r[0]},{self.i[0]},{self.y[0]},{self.r[1]},{self.i[1]},{self.y[1]})'
@@ -230,7 +239,8 @@ class GetToken:
         return str[match.start():match.end()]
 
     def to_action(self):
-        return [action.GetToken(self.t, self.i)]
+        return [action.GetToken1(self.t),
+                action.GetToken2(self.i)]
 
     def __str__(self):
         return f'GetToken({self.t},{self.i})'
@@ -285,7 +295,8 @@ class Replace:
         return str.replace(self.d1, self.d2)
 
     def to_action(self):
-        return [action.Replace(self.d1, self.d2)]
+        return [action.Replace1(self.d1),
+                action.Replace2(self.d2)]
 
     def __str__(self):
         return f'Replace({self.d1},{self.d2})'
@@ -362,7 +373,8 @@ class GetFirst:
         return ''.join([str[m.start():m.end()] for m in matches])
 
     def to_action(self):
-        return [action.GetFirst(self.t, self.i)]
+        return [action.GetFirst1(self.t),
+                action.GetFirst2(self.i)]
 
     def __str__(self):
         return f'GetFirst({self.t},{self.i})'

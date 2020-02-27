@@ -28,6 +28,10 @@ class RobEnv:
             # execute the action over the previous state
             self.pstate = action(self.pstate)
             next_ob = self.pstate.to_np(self.render_kind)
+            # check action sequences
+            if len(self.pstate.past_actions) >= 2:
+                prev_action, curr_action = self.pstate.past_actions[-2:]
+                prev_action.check_next_action(curr_action)
         except Exception as e:
             # if the execution fails, possible reasons:
             # commit a wrong string, no change operation or other index error
@@ -38,6 +42,7 @@ class RobEnv:
             # what state should we put here?? why do we design an empty string
             # pairs for the crash state? pretend it didn't happen?
             self.last_step = RobState.to_crash_np(self.render_kind), -1.0, True
+            return self.last_step
 
         # assign rewards
         reward = 1.0 if self.pstate.committed == self.pstate.outputs else 0.0
@@ -50,7 +55,7 @@ class RobEnv:
             done = True
 
         self.done = done
-        self.last_step = self.pstate, reward, done
+        self.last_step = next_ob, reward, done
 
         return self.last_step
 

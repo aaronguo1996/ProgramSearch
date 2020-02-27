@@ -12,6 +12,9 @@ class ConcatError(Exception):
 class SmallSampleError(Exception):
     pass
 
+class ActionSeqError(Exception):
+    pass
+
 def check_change(old, new):
     if str(old) == str(new):
         # print('Old:', str(old))

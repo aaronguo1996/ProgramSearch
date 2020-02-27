@@ -29,13 +29,13 @@ class Action:
 
     @staticmethod
     def str_mask_to_np_default():
-        np_masks = np.zeros(shape = (MAX_STR_LEN,))
+        np_masks = np.zeros(shape = (MAX_MASK_LEN, MAX_STR_LEN))
         return np_masks
 
     def str_mask_to_np(self, str, pstate):
         return Action.str_mask_to_np_default()
 
-    def execute(self, x):
+    def execute(self, pstate, x):
         pass
 
     def __call__(self, pstate):
@@ -54,6 +54,7 @@ class Action:
                 if o == "":
                     continue
                 elif not o.startswith(c):
+                    print(o, c)
                     raise ConcatError
 
             return RobState(pstate.inputs,
@@ -67,7 +68,7 @@ class Action:
             execute the action over all the intermediate states
             and replace the old scratch states with the new ones
             """
-            new_scratch = [self.execute(x) for x in pstate.scratch]
+            new_scratch = [self.execute(pstate, x) for x in pstate.scratch]
             check_change(pstate.scratch, new_scratch)
             return RobState(pstate.inputs,
                             new_scratch,
@@ -87,7 +88,7 @@ class ToCase(Action):
         self.name = f"ToCase({s})"
         self.s = s
 
-    def execute(self, x):
+    def execute(self, pstate, x):
         if self.s == "Proper":
             return x.title()
         elif self.s == "AllCaps":
@@ -103,88 +104,155 @@ class ToCase(Action):
                 ToCase('AllCaps'),
                 ToCase('Lower')]
 
-class Replace(Action):
+class Replace1(Action):
     """
     Replace(d1, d2)
 
     Replace one delimiter with another one
     """
 
-    def __init__(self, d1, d2):
-        self.name = f"Replace({d1},{d2})"
+    def __init__(self, d1):
+        self.name = f"Replace1({d1})"
         self.d1 = d1
-        self.d2 = d2
 
-    def execute(self, x):
-        return x.replace(self.d1, self.d2)
+    def check_next_action(self, next_action):
+        if "Replace2" not in next_action.name:
+            raise ActionSeqError
 
     @staticmethod
     def generate_actions():
-        return [Replace(d1, d2) for d1 in DELIMITERS
-                for d2 in DELIMITERS
-                if d2 != d1]
+        return [Replace1(d1) for d1 in DELIMITERS]
 
+    # -2 is used for replace
     def str_mask_to_np(self, str, pstate):
         mask = Action.str_mask_to_np_default()
-        for i, c in enumerate(str):
-            mask[i] = 1 if c == self.d1 else 0
+        idxs = [pos for pos, char in enumerate(str1) if char == self.d1]
+        mask[-2][idxs] = 1
         return mask
 
-class Substr(Action):
+    def __call__(self, pstate):
+        return RobState(pstate.inputs,
+                        pstate.scratch,
+                        pstate.committed,
+                        pstate.outputs,
+                        pstate.past_actions + [self])
+
+class Replace2(Action):
+    def __init__(self, d2):
+        self.name = f'Replace2({d2})'
+        self.d2 = d2
+
+    @staticmethod
+    def generate_actions():
+        return [Replace2(d2) for d2 in DELIMITERS]
+
+    def execute(self, pstate, x):
+        if "Replace1" not in pstate.past_actions[-1].name:
+            raise ActionSeqError
+
+        d1 = pstate.past_actions[-1].d1
+        return x.replace(d1, self.d2)
+
+class Substr1(Action):
     """
     Substr(k1, k2)
 
     Get a substring between index k1 and k2
     """
 
-    def __init__(self, k1, k2):
-        self.name = f"Substr({k1},{k2})"
+    def __init__(self, k1):
+        self.name = f"Substr1({k1})"
         self.k1 = k1
-        self.k2 = k2
-
-    def execute(self, x):
-        return x[self.k1:self.k2]
 
     @staticmethod
     def generate_actions():
-        return [Substr(k1, k2) for k1 in POSITION_K for k2 in POSITION_K]
+        return [Substr1(k1) for k1 in POSITION_K]
 
+    def check_next_action(self, next_action):
+        if "Substr2" not in next_action.name:
+            raise ActionSeqError
+
+    # -1 mask is used for substr
     def str_mask_to_np(self, str, pstate):
         mask = Action.str_mask_to_np_default()
-        mask[self.k1:self.k2] = 1
+        mask[-1][self.k1:] = 1
         return mask
 
-class GetToken(Action):
+    def __call__(self, pstate):
+        return RobState(pstate.inputs,
+                        pstate.scratch,
+                        pstate.committed,
+                        pstate.outputs,
+                        pstate.past_actions + [self])
+
+class Substr2(Action):
+    def __init__(self, k2):
+        self.name = f'Substr2({k2})'
+        self.k2 = k2
+
+    @staticmethod
+    def generate_actions():
+        return [Substr2(k2) for k2 in POSITION_K]
+
+    def execute(self, pstate, x):
+        if "Substr1" not in pstate.past_actions[-1].name:
+            raise ActionSeqError
+
+        k1 = pstate.past_actions[-1].k1
+        return x[k1:self.k2]
+
+class GetToken1(Action):
     """
     GetToken(t, i)
 
     ith match of regex t in the string from beginning (end if i < 0)
     """
 
-    def __init__(self, t, i):
-        self.name = f"GetToken({t},{i})"
+    def __init__(self, t):
+        self.name = f"GetToken1({t})"
         self.t = t
+
+    @staticmethod
+    def generate_actions():
+        return [GetToken1(t) for t in REGEX.keys()]
+
+    def check_next_action(self, next_action):
+        if "GetToken2" not in next_action.name:
+            raise ActionSeqError
+
+    def str_masks_to_np(self, str, pstate):
+        masks = Action.str_mask_to_np_default()
+        # enumerate over all the regex masks
+        p = list(re.finditer(REGEX[self.t], str))
+        # first 5 masks are used for regex
+        for i, m in enumerate(p[:max(INDEX)]):
+            masks[i][m.start():m.end()] = 1
+        return masks
+
+    def __call__(self, pstate):
+        return RobState(pstate.inputs,
+                        pstate.scratch,
+                        pstate.committed,
+                        pstate.outputs,
+                        pstate.past_actions + [self])
+
+class GetToken2(Action):
+    def __init__(self, i):
+        self.name = f'GetToken2({i})'
         self.i = i
 
-    def getMatchIndex(self, x):
-        allMatches = re.finditer(REGEX[self.t], x)
-        match = list(allMatches)[self.i]
-        return match
+    def execute(self, pstate, x):
+        if "GetToken1" not in pstate.past_actions[-1].name:
+            raise ActionSeqError
 
-    def execute(self, x):
-        match = self.getMatchIndex(x)
+        t = pstate.past_actions[-1].t
+        allMatches = re.finditer(REGEX[t], x)
+        match = list(allMatches)[self.i]
         return x[match.start():match.end()]
 
     @staticmethod
     def generate_actions():
-        regTypes = REGEX.keys()
-        return [GetToken(t, i) for t in regTypes for i in INDEX]
-
-    def str_mask_to_np(self, str, pstate):
-        match = self.getMatchIndex(str)
-        mask = Action.str_mask_to_np_default()
-        mask[match.start():match:end()] = 1
-        return mask
+        return [GetToken2(i) for i in INDEX]
 
 class GetUpTo(Action):
     """
@@ -202,7 +270,7 @@ class GetUpTo(Action):
         match = list(allMatches)[0]
         return match
 
-    def execute(self, x):
+    def execute(self, pstate, x):
         match = self.getMatch(x)
         return x[:match.end()]
 
@@ -210,12 +278,6 @@ class GetUpTo(Action):
     def generate_actions():
         regTypes = ALL_REGEX.keys()
         return [GetUpTo(r) for r in regTypes]
-
-    def str_mask_to_np(self, str, pstate):
-        match = self.getMatch(str)
-        mask = Action.str_mask_to_np_default()
-        mask[:match.end()] = 1
-        return mask
 
 class GetFrom(Action):
     """
@@ -233,7 +295,7 @@ class GetFrom(Action):
         match = list(allMatches)[-1]
         return match
 
-    def execute(self, x):
+    def execute(self, pstate, x):
         match = self.getMatch(x)
         return x[match.end():]
 
@@ -242,45 +304,57 @@ class GetFrom(Action):
         regTypes = ALL_REGEX.keys()
         return [GetFrom(r) for r in regTypes]
 
-    def str_mask_to_np(self, str, pstate):
-        match = self.getMatch(str)
-        mask = Action.str_mask_to_np_default()
-        mask[match.end():] = 1
-        return mask
-
-class GetFirst(Action):
+class GetFirst1(Action):
     """
     GetFirst(t, i)
 
     Concat(s1, s2, .. si) where sj is the jth match of t in str
     """
 
-    def __init__(self, t, i):
-        self.name = f"GetFirst({t},{i})"
+    def __init__(self, t):
+        self.name = f"GetFirst1({t})"
         self.t = t
-        self.i = i
-
-    def getMatch(self, x):
-        allMatches = re.finditer(REGEX[self.t], x)
-        match = list(allMatches)[:self.i + 1]
-        return match
-
-    def execute(self, x):
-        matches = self.getMatch(x)
-        strs = [x[m.start():m.end()] for m in matches]
-        return ''.join(strs)
 
     @staticmethod
     def generate_actions():
-        regTypes = REGEX.keys()
-        return [GetFirst(t, i) for t in regTypes for i in INDEX]
+        return [GetFirst1(t) for t in REGEX.keys()]
 
     def str_mask_to_np(self, str, pstate):
-        matches = self.getMatch(str)
-        mask = Action.str_mask_to_np_default()
-        for m in matches:
-            mask[m.start():m.end()] = 1
-        return mask
+        matches = list(re.finditer(self.t, str))
+        masks = Action.str_mask_to_np_default()
+        for i, m in enumerate(matches[:max(INDEX)]):
+            masks[i][m.start():m.end()] = 1
+        return masks
+
+    def check_next_action(self, next_action):
+        if "GetFirst2" not in next_action.name:
+            raise ActionSeqError
+
+    def __call__(self, pstate):
+        return RobState(pstate.inputs,
+                        pstate.scratch,
+                        pstate.committed,
+                        pstate.outputs,
+                        pstate.past_actions + [self])
+
+class GetFirst2(Action):
+    def __init__(self, i):
+        self.name = f'GetFirst2({i})'
+        self.i = i
+
+    @staticmethod
+    def generate_actions():
+        return [GetFirst2(i) for i in INDEX]
+
+    def execute(self, pstate, x):
+        if "GetFirst1" not in pstate.past_actions[-1].name:
+            raise ActionSeqError
+
+        t = pstate.past_actions[-1].t
+        allMatches = re.finditer(REGEX[t], x)
+        firstMatches = list(allMatches)[:self.i]
+        strs = [x[m.start():m.end()] for m in firstMatches]
+        return ''.join(strs)
 
 class GetAll(Action):
     """
@@ -297,7 +371,7 @@ class GetAll(Action):
         allMatches = re.finditer(REGEX[self.t], x)
         return list(allMatches)
 
-    def execute(self, x):
+    def execute(self, pstate, x):
         matches = self.getMatch(x)
         strs = [x[m.start():m.end()] for m in matches]
         return ''.join(strs)
@@ -307,14 +381,7 @@ class GetAll(Action):
         regTypes = REGEX.keys()
         return [GetAll(t) for t in regTypes]
 
-    def str_mask_to_np(self, str, pstate):
-        matches = self.getMatch(str)
-        mask = Action.str_mask_to_np_default()
-        for m in matches:
-            mask[m.start():m.end()] = 1
-        return mask
-
-class GetSpan(Action):
+class GetSpan1(Action):
     """
     GetSpan(r1, i1, y1, r2, i2, y2)
 
@@ -323,42 +390,208 @@ class GetSpan(Action):
     return str[p1...p2]
     """
 
-    def __init__(self, r1, i1, y1, r2, i2, y2):
-        self.name = f'GetSpan({r1},{i1},{y1},{r2},{i2},{y2})'
-        self.r = (r1, r2)
-        self.i = (i1, i2)
-        self.y = (y1, y2)
-
-    def getP(self, x):
-        matches1 = re.finditer(ALL_REGEX[self.r[0]], x)
-        i1match = list(matches1)[self.i[0]]
-        p1 = i1match.start() if self.y[0] == 'Start' else i1match.end()
-        matches2 = re.finditer(ALL_REGEX[self.r[1]], x)
-        i2match = list(matches2)[self.i[1]]
-        p2 = i2match.start() if self.y[1] == 'Start' else i2match.end()
-        return p1, p2
-
-    def execute(self, x):
-        p1, p2 = self.getP(x)
-        return x[p1:p2]
+    def __init__(self, r1):
+        self.name = f'GetSpan1({r1})'
+        self.r1 = r1
 
     @staticmethod
     def generate_actions():
-        return [GetSpan(r1, i1, y1, r2, i2, y2)
-                for r1 in ALL_REGEX
-                for i1 in INDEX
-                for y1 in BOUNDARY
-                for r2 in ALL_REGEX
-                for i2 in INDEX
-                for y2 in BOUNDARY]
+        return [GetSpan1(r) for r in ALL_REGEX.keys()]
 
-    # pstate usually is only used when we separate operations into several
-    # steps, keep it there just in case we change the design in the future
+    def check_next_action(self, next_action):
+        if 'GetSpan2' not in next_action.name:
+            raise ActionSeqError
+
     def str_mask_to_np(self, str, pstate):
-        p1, p2 = self.getP(str)
-        mask = Action.str_mask_to_np_default()
-        mask[p1:p2] = 1
-        return mask
+        # mask for 1st reg
+        masks = Action.str_mask_to_np_default()
+        matches = list(re.finditer(ALL_REGEX[self.r1], str))
+        for i, m in enumerate(matches[:max(INDEX)]):
+            masks[i][m.start():] = 1
+        return masks
+
+    def __call__(self, pstate):
+        return RobState(pstate.inputs,
+                        pstate.scratch,
+                        pstate.committed,
+                        pstate.outputs,
+                        pstate.past_actions + [self])
+
+class GetSpan2(Action):
+    def __init__(self, i1):
+        self.name = f'GetSpan2({i1})'
+        self.i1 = i1
+
+    def check_next_action(self, next_action):
+        if "GetSpan3" not in next_action.name:
+            raise ActionSeqError
+
+    @staticmethod
+    def generate_actions():
+        return [GetSpan2(i) for i in INDEX]
+
+    def str_mask_to_np(self, str, pstate):
+        # mask for 1st reg
+        r1 = pstate.past_actions[-1].r1
+        masks = Action.str_mask_to_np_default()
+        matches = list(re.finditer(ALL_REGEX[r1], str))
+        m = matches[self.i1]
+        masks[-1][m.start():] = 1
+        return masks
+
+    def __call__(self, pstate):
+        if 'GetSpan1' not in pstate.past_actions[-1].name:
+            raise ActionSeqError
+
+        return RobState(pstate.inputs,
+                        pstate.scratch,
+                        pstate.committed,
+                        pstate.outputs,
+                        pstate.past_actions + [self])
+
+class GetSpan3(Action):
+    def __init__(self, y1):
+        self.name = f'GetSpan3({y1})'
+        self.y1 = y1
+
+    @staticmethod
+    def generate_actions():
+        return [GetSpan3(y) for y in BOUNDARY]
+
+    def check_next_action(self, next_action):
+        if 'GetSpan4' not in next_action.name:
+            raise ActionSeqError
+
+    def str_mask_to_np(self, str, pstate):
+        r1 = pstate.past_actions[-2].r1
+        i1 = pstate.past_actions[-1].i1
+        matches = list(re.finditer(ALL_REGEX[r1], str))
+        m = matches[i1]
+        masks = Action.str_mask_to_np_default()
+        masks[-1][m.start():] = 1
+        if self.y1 == 'End':
+            masks[-1][m.start():m.end()] = 0
+        return masks
+
+    def __call__(self, pstate):
+        if 'GetSpan2' not in pstate.past_actions[-1].name:
+            raise ActionSeqError
+
+        return RobState(pstate.inputs,
+                        pstate.scratch,
+                        pstate.committed,
+                        pstate.outputs,
+                        pstate.past_actions + [self])
+
+class GetSpan4(Action):
+    def __init__(self, r2):
+        self.name = f'GetSpan4({r2})'
+        self.r2 = r2
+
+    @staticmethod
+    def generate_actions():
+        return [GetSpan4(r) for r in ALL_REGEX.keys()]
+
+    def check_next_action(self, next_action):
+        if 'GetSpan5' not in next_action.name:
+            raise ActionSeqError
+
+    def str_mask_to_np(self, str, pstate):
+        r1 = pstate.past_actions[-3].r1
+        i1 = pstate.past_actions[-2].i1
+        y1 = pstate.past_actions[-1].y1
+        matches = list(re.finditer(ALL_REGEX[r1], str))
+        m = matches[i1]
+        masks = Action.str_mask_to_np_default()
+        masks[-1][m.start():] = 1
+        if self.y1 == 'End':
+            masks[-1][m.start():m.end()] = 0
+
+        matches = list(re.finditer(ALL_REGEX[self.r2], str))
+        for i, m in enumerate(matches[:max(INDEX)]):
+            masks[i][:m.end()] = 1
+        return masks
+
+    def __call__(self, pstate):
+        if 'GetSpan3' not in pstate.past_actions[-1].name:
+            raise ActionSeqError
+
+        return RobState(pstate.inputs,
+                        pstate.scratch,
+                        pstate.committed,
+                        pstate.outputs,
+                        pstate.past_actions + [self])
+
+class GetSpan5(Action):
+    def __init__(self, i2):
+        self.name = f'GetSpan5({i2})'
+        self.i2 = i2
+
+    @staticmethod
+    def generate_actions():
+        return [GetSpan5(i) for i in INDEX]
+
+    def check_next_action(self, next_action):
+        if 'GetSpan6' not in next_action.name:
+            raise ActionSeqError
+
+    def str_mask_to_np(self, str, pstate):
+        r1 = pstate.past_actions[-4].r1
+        i1 = pstate.past_actions[-3].i1
+        y1 = pstate.past_actions[-2].y1
+        r2 = pstate.past_actions[-1].r2
+        matches = list(re.finditer(ALL_REGEX[r1], str))
+        m = matches[i1]
+        masks = Action.str_mask_to_np_default()
+        masks[-1][m.start():] = 1
+        if self.y1 == 'End':
+            masks[-1][m.start():m.end()] = 0
+
+        matches = list(re.finditer(ALL_REGEX[r2], str))
+        m = matches[self.i2]
+        tmp_mask = np.zeros(shape = (MAX_STR_LEN,))
+        tmp_mask[:m.end()] = 1
+        masks[-1] = masks[-1] * tmp_mask
+
+        return masks
+
+    def __call__(self, pstate):
+        if 'GetSpan4' not in pstate.past_actions[-1].name:
+            raise ActionSeqError
+
+        return RobState(pstate.inputs,
+                        pstate.scratch,
+                        pstate.committed,
+                        pstate.outputs,
+                        pstate.past_actions + [self])
+
+class GetSpan6(Action):
+    def __init__(self, y2):
+        self.name = f'GetSpan6({y2})'
+        self.y2 = y2
+
+    @staticmethod
+    def generate_actions():
+        return [GetSpan6(y) for y in BOUNDARY]
+
+    def execute(self, pstate, x):
+        if 'GetSpan5' not in pstate.past_actions[-1].name:
+            raise ActionSeqError
+
+        r1 = pstate.past_actions[-5].r1
+        i1 = pstate.past_actions[-4].i1
+        y1 = pstate.past_actions[-3].y1
+        r2 = pstate.past_actions[-2].r2
+        i2 = pstate.past_actions[-1].i2
+        matches = list(re.finditer(ALL_REGEX[r1], x))
+        m = matches[i1]
+        p1 = m.end() if y1 == 'End' else m.start()
+
+        matches = list(re.finditer(ALL_REGEX[r2], x))
+        m = matches[i2]
+        p2 = m.end() if self.y2 == 'End' else m.start()
+
+        return x[p1:p2]
 
 class ConstStr(Action):
     """
@@ -369,7 +602,7 @@ class ConstStr(Action):
         self.name = f'ConstStr({c})'
         self.c = c
 
-    def execute(self, x):
+    def execute(self, pstate, x):
         return self.c
 
     @staticmethod
@@ -384,7 +617,7 @@ class Commit(Action):
     def __init__(self):
         self.name = 'Commit'
 
-    def execute(self, x):
+    def execute(self, pstate, x):
         pass
 
     @staticmethod
@@ -392,14 +625,23 @@ class Commit(Action):
         return [Commit()]
 
 ALL_ACTION_TYPES = [ToCase,
-                    Replace,
-                    Substr,
-                    GetToken,
+                    Replace1,
+                    Replace2,
+                    Substr1,
+                    Substr2,
+                    GetToken1,
+                    GetToken2,
                     GetUpTo,
                     GetFrom,
-                    GetFirst,
+                    GetFirst1,
+                    GetFirst2,
                     GetAll,
-                    GetSpan,
+                    GetSpan1,
+                    GetSpan2,
+                    GetSpan3,
+                    GetSpan4,
+                    GetSpan5,
+                    GetSpan6,
                     ConstStr,
                     Commit
                    ]

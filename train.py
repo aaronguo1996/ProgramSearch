@@ -74,6 +74,9 @@ def train_supervised(agent):
                             batchsize=BATCH_SIZE,
                             max_size=100)
 
+    if not hasattr(agent, 'train_iterations'):
+        agent.train_iterations = 0
+
     for i, (states, actions) in enumerate(
             dataqueue.batchIterator() if USE_PARALLEL else \
             get_supervised_batchsize(lambda: get_supervised_sample(),

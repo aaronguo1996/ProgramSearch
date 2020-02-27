@@ -60,7 +60,6 @@ def generate_examples(num_of_examples, verbose=False):
     """
 
     prog = expression.Program.generate()
-    print('Generated program:', prog)
     inputs = []
     outputs = []
 
@@ -70,6 +69,7 @@ def generate_examples(num_of_examples, verbose=False):
         try:
             # we already have desired number of I/O examples
             if success_cnt == num_of_examples:
+                # print('Generated program:', prog)
                 return prog, inputs, outputs
 
             # we generate new inputs first, operate the program over the input

@@ -15,6 +15,7 @@ class DenseLayer(nn.Module):
         self.linear = ntorch.nn.Linear(in_size, out_size).spec('h', 'h')
 
     def forward(self, x):
+        # print("Layer", x.shape)
         return self.linear(x).relu()
 
 class DenseBlock(nn.Module):
@@ -29,12 +30,13 @@ class DenseBlock(nn.Module):
             modules.append(DenseLayer(input_size + i * growth_rate,
                                       growth_rate))
         modules.append(DenseLayer(input_size + (num_of_layers - 1) *
-                                  growth_rate, growth_rate))
+                                  growth_rate, output_size))
 
         self.layers = nn.ModuleList(modules)
 
     def forward(self, x):
         inputs = [x]
+        # print(x.shape)
         for layer in self.layers:
             output = layer(ntorch.cat(inputs, 'h'))
             inputs.append(output)
@@ -54,7 +56,7 @@ class Encoder(nn.Module):
         # convolution
         self.column_encoding = ntorch.nn.Conv1d(
             # inputs, outputs, scratch, committed, mask
-            in_channels = 4 * CHAR_EMBED_DIM + 1,
+            in_channels = 4 * CHAR_EMBED_DIM + MAX_MASK_LEN,
             out_channels = COLUMN_ENCODING_DIM,
             kernel_size = KERNEL_SIZE,
             padding = int((KERNEL_SIZE - 1) / 2)).spec('inFeatures',
@@ -65,16 +67,21 @@ class Encoder(nn.Module):
 
         self.MLP = DenseBlock(DENSE_LAYERS,
                               GROWTH_RATE,
-                              COLUMN_ENCODING_DIM * STR_LEN,
+                              COLUMN_ENCODING_DIM * MAX_STR_LEN,
                               H_OUT)
 
     def forward(self, chars, masks):
         chars_emb = self.char_embedding(chars)
         chars_emb = chars_emb.stack(('charEmb', 'stateLoc'), 'inFeatures')
+        # print(chars_emb.shape)
+        # print(masks.shape)
 
         x = ntorch.cat([chars_emb, masks], 'inFeatures')
+        # print("after add masks", x.shape)
         e = self.column_encoding(x)
+        # print("after column encoding", e.shape)
         e = e.stack(('strLen', 'expression'), 'h')
+        # print(e.shape)
         h = self.MLP(e)
 
         return h
@@ -149,7 +156,7 @@ class Agent:
             self.nn = Model(len(actions))
             self.Vnn = Model(len(actions), is_value_net=True)
 
-    def state_to_sensor(self, states):
+    def state_to_tensor(self, states):
         inputs, scratchs, committeds, outputs, masks, last_actions = zip(*states)
 
         inputs = np.stack(inputs)
@@ -168,12 +175,16 @@ class Agent:
         output_tensor = ntorch.tensor(outputs, ('batch',
                                                 'Examples',
                                                 'strLen'))
-        chars = np.stack([inputs, scratchs, committeds, outputs], 'stateLoc')
+        chars = ntorch.stack([input_tensor,
+                              scratch_tensor,
+                              committed_tensor,
+                              output_tensor], 'stateLoc')
         chars = chars.transpose('batch', 'Examples',
                                 'strLen', 'stateLoc').long()
-
-        masks = np.array([masks])
+        # print(chars.shape)
+        masks = np.stack(masks)
         masks = ntorch.tensor(masks, ('batch', 'Examples', 'inFeatures', 'strLen'))
+        # print(masks.shape)
         masks = masks.transpose('batch', 'Examples', 'strLen', 'inFeatures').float()
 
         last_actions = np.stack(last_actions)
@@ -197,20 +208,20 @@ class Agent:
     # not a symbolic state here
     # actions are 2, 3 instead of 0,1 index here
     def learn_supervised(self, states, actions):
-        chars, masks, last_actions = self.states_to_tensors(states)
+        chars, masks, last_actions = self.state_to_tensor(states)
         targets = self.actions_to_target(actions)
         loss = self.nn.learn_supervised(chars, masks, last_actions, targets)
         return loss
 
     def value_fun_optim_step(self, states, rewards):
-        chars, masks, last_actions = self.states_to_tensors(states)
+        chars, masks, last_actions = self.state_to_tensor(states)
         targets = self.rewards_to_target(rewards)
         #print("TARGETS",targets.sum("batch").item())
         loss = self.Vnn.learn_supervised(chars, masks, last_actions, targets)
         return loss
 
     def compute_values(self, states):
-        chars, masks, last_actions = self.states_to_tensors(states)
+        chars, masks, last_actions = self.state_to_tensor(states)
         output_dists = self.Vnn(chars, masks, last_actions)
         return output_dists
 
@@ -268,6 +279,23 @@ class Agent:
         self.nn.load(load_path)
         if not policy_only:
             self.Vnn.load(load_path + 'vnet')
+
+    def best_actions(self, states):
+        chars, masks, last_actions = self.state_to_tensor(states)
+        logits = self.nn.forward(chars, masks, last_actions)
+        _, argmax = logits.max('actions')
+        action_list = [self.idx_to_action[argmax[{"batch":i}].item()] for i in
+                       range(argmax.shape["batch"])]
+        return action_list
+
+    def get_actions(self, states):
+        chars, masks, last_actions = self.state_to_tensor(states)
+        logits = self.nn.forward(chars, masks, last_actions)
+        lls = logits._new(F.log_softmax(logits._tensor,
+                                        dim=logits._schema.get("actions")))
+        if self.use_cuda:
+            lls = lls.cpu()
+        return lls
 
     def smc_rollout(self, env, max_beam_size=1000, max_iter=30, verbose=False, max_nodes_expanded=2*1024*30*10, timeout=None, sample_only=False, track_edit_distance=False): #value_filter_size=4000):
         env.reset()
