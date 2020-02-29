@@ -1,5 +1,6 @@
 from action import RobState
 from util import *
+import sys, os
 
 class RobEnv:
     def __init__(self, inputs, outputs,
@@ -36,7 +37,10 @@ class RobEnv:
             # if the execution fails, possible reasons:
             # commit a wrong string, no change operation or other index error
             if self.verbose:
-                print('Caught error:', e)
+                exc_type, exc_obj, exc_tb = sys.exc_info()
+                print(exc_tb.tb_frame.f_code.co_filename)
+                print(exc_tb.tb_lineno)
+                print('Caught error for', action.name, e)
 
             self.done = True
             # what state should we put here?? why do we design an empty string

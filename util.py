@@ -47,6 +47,7 @@ N_ENVS_PER_ROLLOUT = 2
 RL_ITERATIONS = 12000
 N_PROCESSES = 8
 USE_PARALLEL = True
+N_ROLLOUTS = 500
 
 # model store
 SAVE_PATH = 'models/model_'

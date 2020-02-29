@@ -7,6 +7,8 @@ from util import *
 import action
 
 import time
+import random
+import torch
 
 def get_rollout(env, actions, max_iter):
     """
@@ -16,9 +18,11 @@ def get_rollout(env, actions, max_iter):
     s = env.reset()
 
     for i in range(max_iter):
+        if random.random() < 0.5:
+            env = env.copy()
         a = action.Commit() if i >= len(actions) else actions[i]
         state, reward, done = env.step(a)
-        trace.append((s, a, reward, state, done))
+        trace.append((s, a, reward, state, str(env.pstate.scratch[0])))
         s = state
         if done: break
 
@@ -58,12 +62,12 @@ def sample_from_traces(traces):
     # (prev_state, action, reward, curr_state, done)
     for trace in traces:
         r = trace[-1][2]
-        pstates, acts, rs, cstates, _ = list(zip(*trace))
-        states += cstates
-        rewards += rs
-        if r == 1.0:
-            actions += acts
-            prev_states += pstates
+        for te in trace:
+            states.append(te[3])
+            rewards.append(r)
+            if r == 1.0:
+                prev_states.append(te[0])
+                actions.append(te[1])
 
     return states, rewards, actions, prev_states
 
@@ -143,6 +147,8 @@ def initialize_value_as_policy(agent):
     policy_params = agent.nn.named_parameters()
     value_params = agent.Vnn.named_parameters()
 
+    dict_value_params = dict(value_params)
+
     for name, param in policy_params:
         if name in dict_value_params and not "action_decoder" in name:
             print(f"copying {name}")
@@ -158,11 +164,11 @@ if __name__ == '__main__':
         print("loaded model")
     except FileNotFoundError:
         print ("no saved model found ... training from scratch")
-    #train
-    train_supervised(agent)
+    # train
+    # train_supervised(agent)
 
-    #optionally, can do this:
+    # optionally, can do this:
     initialize_value_as_policy(agent)
 
-    #rl train, whatever that entails
+    # rl train, whatever that entails
     train_rl(agent)

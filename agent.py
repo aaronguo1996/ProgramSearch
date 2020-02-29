@@ -102,11 +102,13 @@ class Model(nn.Module):
         if is_value_net:
             self.action_decoder = ntorch.nn.Linear(H_OUT, 2).spec('h', 'value')
             self.loss_fn = ntorch.nn.NLLLoss().spec('value')
+            # self.loss_fn.reduction = None
         else:
             self.action_decoder = ntorch.nn.Linear(H_OUT,
                                                    num_of_actions).spec('h',
                                                                         'actions')
             self.loss_fn = ntorch.nn.CrossEntropyLoss().spec('actions')
+            # self.loss_fn.reduction = None
 
         self.opt = torch.optim.Adam(self.parameters(), lr=0.001)
 
@@ -191,7 +193,7 @@ class Agent:
         last_actions = ntorch.tensor(last_actions, 'batch').long()
 
         if self.use_cuda:
-            return chars.cuda(), masks.cuda(), last_butts.cuda()
+            return chars.cuda(), masks.cuda(), last_actions.cuda()
         else:
             return chars, masks, last_actions
 
@@ -251,7 +253,7 @@ class Agent:
 
         for i in range(max_iter):
             if not i == 0:
-                active_states = [t[-1].s for t in traces if not t[-1].done]
+                active_states = [t[-1][3] for t in traces if not t[-1][4]]
             action_list = self.sample_actions(active_states) if active_states else []
             # prevents nn running on nothing
             action_list_iter = iter(action_list)
@@ -259,14 +261,14 @@ class Agent:
             if action_list == []: return traces
 
             for j in range(n_initial_envs*n_rollouts):
-                if i > 0 and traces[j][-1].done: #if done:
+                if i > 0 and traces[j][-1][4] == True: #if done:
                     continue
                 a = next(action_list_iter)
                 ss, r, done = envs[j].step(a)
                 if i == 0:
                     prev_s = envs[j].last_step[0]
                 else:
-                    prev_s = traces[j][-1][0]
+                    prev_s = traces[j][-1][3]
                 traces[j].append((prev_s, a, r, ss, done))
 
         return traces
@@ -443,3 +445,4 @@ class Agent:
         solution = None
         stats['end_time'] = time.time()
         return hit, solution, stats    
+

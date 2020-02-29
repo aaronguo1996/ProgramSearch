@@ -38,6 +38,9 @@ class Action:
     def execute(self, pstate, x):
         pass
 
+    def check_next_action(self, next_action):
+        pass
+
     def __call__(self, pstate):
         if self.name == 'Commit':
             """
@@ -54,7 +57,7 @@ class Action:
                 if o == "":
                     continue
                 elif not o.startswith(c):
-                    print(o, c)
+                    # print(o, c)
                     raise ConcatError
 
             return RobState(pstate.inputs,
@@ -126,7 +129,7 @@ class Replace1(Action):
     # -2 is used for replace
     def str_mask_to_np(self, str, pstate):
         mask = Action.str_mask_to_np_default()
-        idxs = [pos for pos, char in enumerate(str1) if char == self.d1]
+        idxs = [pos for pos, char in enumerate(str) if char == self.d1]
         mask[-2][idxs] = 1
         return mask
 
@@ -220,7 +223,7 @@ class GetToken1(Action):
         if "GetToken2" not in next_action.name:
             raise ActionSeqError
 
-    def str_masks_to_np(self, str, pstate):
+    def str_mask_to_np(self, str, pstate):
         masks = Action.str_mask_to_np_default()
         # enumerate over all the regex masks
         p = list(re.finditer(REGEX[self.t], str))
@@ -432,7 +435,7 @@ class GetSpan2(Action):
 
     def str_mask_to_np(self, str, pstate):
         # mask for 1st reg
-        r1 = pstate.past_actions[-1].r1
+        r1 = pstate.past_actions[-2].r1
         masks = Action.str_mask_to_np_default()
         matches = list(re.finditer(ALL_REGEX[r1], str))
         m = matches[self.i1]
@@ -463,8 +466,8 @@ class GetSpan3(Action):
             raise ActionSeqError
 
     def str_mask_to_np(self, str, pstate):
-        r1 = pstate.past_actions[-2].r1
-        i1 = pstate.past_actions[-1].i1
+        r1 = pstate.past_actions[-3].r1
+        i1 = pstate.past_actions[-2].i1
         matches = list(re.finditer(ALL_REGEX[r1], str))
         m = matches[i1]
         masks = Action.str_mask_to_np_default()
@@ -497,14 +500,14 @@ class GetSpan4(Action):
             raise ActionSeqError
 
     def str_mask_to_np(self, str, pstate):
-        r1 = pstate.past_actions[-3].r1
-        i1 = pstate.past_actions[-2].i1
-        y1 = pstate.past_actions[-1].y1
+        r1 = pstate.past_actions[-4].r1
+        i1 = pstate.past_actions[-3].i1
+        y1 = pstate.past_actions[-2].y1
         matches = list(re.finditer(ALL_REGEX[r1], str))
         m = matches[i1]
         masks = Action.str_mask_to_np_default()
         masks[-1][m.start():] = 1
-        if self.y1 == 'End':
+        if y1 == 'End':
             masks[-1][m.start():m.end()] = 0
 
         matches = list(re.finditer(ALL_REGEX[self.r2], str))
@@ -536,15 +539,15 @@ class GetSpan5(Action):
             raise ActionSeqError
 
     def str_mask_to_np(self, str, pstate):
-        r1 = pstate.past_actions[-4].r1
-        i1 = pstate.past_actions[-3].i1
-        y1 = pstate.past_actions[-2].y1
-        r2 = pstate.past_actions[-1].r2
+        r1 = pstate.past_actions[-5].r1
+        i1 = pstate.past_actions[-4].i1
+        y1 = pstate.past_actions[-3].y1
+        r2 = pstate.past_actions[-2].r2
         matches = list(re.finditer(ALL_REGEX[r1], str))
         m = matches[i1]
         masks = Action.str_mask_to_np_default()
         masks[-1][m.start():] = 1
-        if self.y1 == 'End':
+        if y1 == 'End':
             masks[-1][m.start():m.end()] = 0
 
         matches = list(re.finditer(ALL_REGEX[r2], str))
@@ -599,7 +602,7 @@ class ConstStr(Action):
     """
 
     def __init__(self, c):
-        self.name = f'ConstStr({c})'
+        self.name = f'ConstStr(\'{c}\')'
         self.c = c
 
     def execute(self, pstate, x):
